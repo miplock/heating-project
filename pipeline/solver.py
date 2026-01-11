@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
-
+from metrics import EnergyAccumulator
 import numpy as np
 
 
@@ -152,25 +152,32 @@ class HeatEquationSolver2D:
         n_steps = self.time.n_steps
         dt = self.time.dt
 
+        acc = EnergyAccumulator(hx=self.grid.hx, dt=self.time.dt)
+        psi_hist = []
+
         for k in range(n_steps + 1):
             t = min(k * dt, self.time.t_end)
 
             if k % store_every == 0:
                 snapshots.append(u.copy())
+                psi_hist.append(acc.psi)
                 if return_times:
                     times.append(t)
 
             if k == n_steps:
                 break
 
-            u = self.step(u)
+            u, src = self.step_with_source(u)
+            acc = acc.step(src)
+
 
             if callback is not None:
                 callback(k + 1, t + dt, u)
 
         out: Dict[str, Any] = {"U": snapshots}
         if return_times:
-            out["t"] = times
+            out["t"] = times    
+        out["Psi"] = psi_hist
         return out
 
     def step(self, u: Array) -> Array:
@@ -201,6 +208,16 @@ class HeatEquationSolver2D:
         unew = self.apply_domain_mask(unew, u_bc)
 
         return unew
+    
+    def step_with_source(self, u: Array) -> tuple[Array, Array]:
+        u = self._validate_u(u)
+        u_bc = self.apply_boundary(u)
+        lap = self.laplacian(u_bc)
+        src = self.source_term(u_bc)
+        unew = u_bc + self.time.dt * (self.phys.alpha * lap + src)
+        unew = self.apply_domain_mask(unew, u_bc)
+        return unew, src
+
 
     # -------------------------
     # Core numerics
