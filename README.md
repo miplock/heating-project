@@ -7,7 +7,7 @@ przeprowadzania eksperymentow z zadania projektowego.
 ## Struktura
 - `pipeline/solver.py` - solver 2D rownania ciepla + konfiguracje siatki i BC
 - `pipeline/metrics.py` - proste metryki (energia, srednia i odchylenie temperatury)
-- `pipeline/*.ipynb` - notatniki pomocnicze/raportowe
+- `notebooks/*.ipynb` - notatniki pomocnicze/raportowe
 - `heating-project-v1.pdf` - opis projektu (wejscie)
 - `TODO.md` - lista zadan
 
@@ -42,7 +42,7 @@ U = out["U"]
 ```
 
 ## Notatniki
-Notatniki znajduja sie w `pipeline/`. Uruchom np.:
+Notatniki znajduja sie w `notebooks/`. Uruchom np.:
 ```bash
 jupyter lab
 ```
