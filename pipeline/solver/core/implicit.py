@@ -2,7 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 import numpy as np
+
+try:
+    from scipy.sparse import csc_matrix, diags
+    from scipy.sparse.linalg import splu
+
+    _SPARSE_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    csc_matrix = None
+    diags = None
+    splu = None
+    _SPARSE_AVAILABLE = False
 
 from pipeline.solver.types import Array, Grid, PhysicalParams, TimeGrid
 
@@ -17,18 +30,27 @@ class ImplicitSystem:
         # Wspolczynnik 1/h^2, uzywany w Laplasjanie.
         self._inv_h2 = 1.0 / (self.grid.hx * self.grid.hx)
         # Bufor na macierz dla schematu niejawnego.
-        self._mat = None
+        self._mat: Optional[Any] = None
         # Zapamietany rozmiar siatki dla cache macierzy.
         self._shape = None
+        # Cache dla faktoryzacji rzadkiej macierzy.
+        self._lu: Optional[Any] = None
+        # Czy korzystamy z rozwiazywania macierzy rzadkiej.
+        self._use_sparse = _SPARSE_AVAILABLE
 
     def step(self, u_bc: Array, src: Array) -> Array:
         """Solve the implicit diffusion step for the interior nodes."""
         mat = self._matrix()
         rhs = self._rhs(u_bc, src)
-        u_int = np.linalg.solve(mat, rhs)
+        if self._use_sparse:
+            if self._lu is None:
+                raise RuntimeError("Sparse factorization cache is missing.")
+            u_int = self._lu.solve(rhs)
+        else:
+            u_int = np.linalg.solve(mat, rhs)
         return self._merge(u_bc, u_int)
 
-    def _matrix(self) -> Array:
+    def _matrix(self) -> Any:
         """Build or reuse the implicit system matrix."""
         ny, nx = self.grid.shape
         if self._mat is not None:
@@ -39,26 +61,46 @@ class ImplicitSystem:
         ny_int = ny - 2
         nx_int = nx - 2
         n = ny_int * nx_int
-        mat = np.zeros((n, n), dtype=float)
         # Wspolczynnik z kroku czasowego.
         lam = self.phys.alpha * self.time.dt * self._inv_h2
 
-        def idx(i: int, j: int) -> int:
-            # Indeks w wektorze dla komorki (i, j) wnetrza.
-            return i * nx_int + j
+        if self._use_sparse:
+            main = (1.0 + 4.0 * lam) * np.ones(n, dtype=float)
+            off_x = -lam * np.ones(n - 1, dtype=float)
+            off_y = -lam * np.ones(n - nx_int, dtype=float)
 
-        for i in range(ny_int):
-            for j in range(nx_int):
-                k = idx(i, j)
-                mat[k, k] = 1.0 + 4.0 * lam
-                if i > 0:
-                    mat[k, idx(i - 1, j)] = -lam
-                if i < ny_int - 1:
-                    mat[k, idx(i + 1, j)] = -lam
-                if j > 0:
-                    mat[k, idx(i, j - 1)] = -lam
-                if j < nx_int - 1:
-                    mat[k, idx(i, j + 1)] = -lam
+            # Wylacz polaczenia miedzy wierszami w kierunku x.
+            row_starts = np.arange(1, n) % nx_int == 0
+            off_x[row_starts] = 0.0
+            row_ends = np.arange(n - 1) % nx_int == (nx_int - 1)
+            off_x_plus = off_x.copy()
+            off_x_plus[row_ends] = 0.0
+
+            mat = diags(
+                diagonals=[main, off_x_plus, off_x, off_y, off_y],
+                offsets=[0, 1, -1, nx_int, -nx_int],
+                format="csc",
+            )
+            self._lu = splu(mat)
+        else:
+            mat = np.zeros((n, n), dtype=float)
+
+            def idx(i: int, j: int) -> int:
+                # Indeks w wektorze dla komorki (i, j) wnetrza.
+                return i * nx_int + j
+
+            for i in range(ny_int):
+                for j in range(nx_int):
+                    k = idx(i, j)
+                    mat[k, k] = 1.0 + 4.0 * lam
+                    if i > 0:
+                        mat[k, idx(i - 1, j)] = -lam
+                    if i < ny_int - 1:
+                        mat[k, idx(i + 1, j)] = -lam
+                    if j > 0:
+                        mat[k, idx(i, j - 1)] = -lam
+                    if j < nx_int - 1:
+                        mat[k, idx(i, j + 1)] = -lam
 
         # Cache dla kolejnych krokow.
         self._mat = mat

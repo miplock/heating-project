@@ -104,12 +104,38 @@ def run_exp1(
             solver.masks = masks
             solver.radiator = radiator
         # Symulacja: albo pelne mapy w czasie, albo tylko koncowy stan.
+        step_tracker = None
+        callback = None
+        if progress:
+            step_tracker = ProgressTracker(
+                prefix="simulate",
+                total=time.n_steps,
+            )
+
+            def on_step(step_idx: int, t: float, _u: np.ndarray) -> None:
+                suffix = f"r={r:.3f}m t={t:.2f}"
+                step_tracker.update(step_idx, suffix=suffix)
+
+            callback = on_step
         if collect_maps:
             # Zapisuj kazdy krok czasu.
-            out = solver.simulate(u0, store_every=1)
+            out = solver.simulate(
+                u0,
+                store_every=1,
+                callback=callback,
+            )
         else:
             # Zapisz tylko ostatni stan.
-            out = solver.simulate(u0, store_every=time.n_steps)
+            out = solver.simulate(
+                u0,
+                store_every=time.n_steps,
+                callback=callback,
+            )
+        if step_tracker is not None:
+            step_tracker.finish()
+        if tracker is not None:
+            suffix = f"r={r:.3f}m"
+            tracker.update(idx, suffix=suffix)
         # Ostatnie pole temperatury.
         u_end = out["U"][-1]
 
