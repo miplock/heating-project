@@ -1,0 +1,9 @@
+name,symbol,value,units,source
+specific_gas_constant_air,r,287,J/(kg*K),https://www.engineeringtoolbox.com/air-properties-d_156.html
+specific_heat_air_cp,c,1005,J/(kg*K),https://www.engineeringtoolbox.com/air-specific-heat-capacity-d_705.html
+atmospheric_pressure,p,101325,Pa,https://www.engineeringtoolbox.com/standard-atmosphere-d_604.html
+thermal_diffusivity_air,alpha,2.1e-5,m^2/s,https://www.engineeringtoolbox.com/air-thermal-diffusivity-d_201.html
+thermal_diffusivity_concrete,alpha,1.0e-6,m^2/s,https://www.researchgate.net/figure/Figure-8-Thermal-diffusivity-of-concrete-with-different-mixing-proportion_fig4_287467364
+thermal_diffusivity_glass,alpha,0.34e-6,m^2/s,https://en.wikipedia.org/wiki/Thermal_diffusivity
+thermal_conductivity_concrete,lambda,1.7,W/(m*K),https://www.engineeringtoolbox.com/concrete-thermal-properties-d_152.html
+thermal_conductivity_glass,lambda,1.0,W/(m*K),https://en.wikipedia.org/wiki/Thermal_conductivity

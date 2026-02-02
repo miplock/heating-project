@@ -1,0 +1,8 @@
+name,value,units,description
+temp_initial,289.15,K,Initial temperature
+time_steps,10,count,Number of simulation time steps
+time_step,1.0,s,Time step size
+space_step,0.1,m,Spatial step size
+room_length,5.0,m,Room length
+room_width,4.0,m,Room width
+temp_external,278.15,K,External temperature
