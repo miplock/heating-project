@@ -1,0 +1,9 @@
+name,symbol,value,units,source
+specific_gas_constant_air,r,287,J/(kg*K),https://www.engineeringtoolbox.com/air-properties-d_156.html
+specific_heat_air_cp,c,1005,J/(kg*K),https://www.engineeringtoolbox.com/air-specific-heat-capacity-d_705.html
+atmospheric_pressure,p,101325,Pa,https://www.engineeringtoolbox.com/standard-atmosphere-d_604.html
+thermal_diffusivity_air,alpha,2.1e-5,m^2/s,https://www.engineeringtoolbox.com/air-thermal-diffusivity-d_201.html
+thermal_conductivity_air,lambda,0.024,W/(m*K),https://www.engineeringtoolbox.com/air-thermal-conductivity-d_429.html
+heat_transfer_coefficient_concrete,h,0.0024,W/(m^2*K),
+heat_transfer_coefficient_glass,h,6.5,W/(m^2*K),
+radiator_power,P,2000,W,

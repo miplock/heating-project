@@ -13,3 +13,7 @@ env/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Data artifacts
+heat_results.pkl
+heatmap_last
