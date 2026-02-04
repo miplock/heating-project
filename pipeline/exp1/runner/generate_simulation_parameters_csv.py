@@ -25,9 +25,9 @@ def write_simulation_parameters_csv(
     temp_external: float,
     radiator_size_x: float,
     radiator_size_y: float,
-    radiator_pos_x: float,
+    radiator_pos_x: float | str,
     radiator_pos_y: float,
-    window_pos_x: float,
+    window_pos_x: float | str,
     window_width: float,
     use_iterative_solver: bool = False,
     name_suffix: str = "def",
@@ -38,6 +38,17 @@ def write_simulation_parameters_csv(
             return False
         k = round(value / step)
         return abs(value - k * step) <= tol
+
+    if isinstance(radiator_pos_x, str):
+        if radiator_pos_x.strip().lower() == "center":
+            radiator_pos_x = (room_width - radiator_size_x) / 2.0
+        else:
+            raise ValueError("radiator_pos_x must be a float or 'center'")
+    if isinstance(window_pos_x, str):
+        if window_pos_x.strip().lower() == "center":
+            window_pos_x = (room_width - window_width) / 2.0
+        else:
+            raise ValueError("window_pos_x must be a float or 'center'")
 
     if time_steps <= 0:
         raise ValueError("time_steps must be positive")

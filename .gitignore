@@ -17,3 +17,4 @@ Thumbs.db
 # Data artifacts
 heat_results.pkl
 heatmap_last
+data/shared/processed/heat_results.pkl

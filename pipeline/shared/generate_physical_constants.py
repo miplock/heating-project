@@ -41,7 +41,7 @@ def write_physical_constants_csv(csv_path: Path) -> None:
         {
             "name": "thermal_diffusivity_air",
             "symbol": "alpha",
-            "value": "2.1e-5",
+            "value": "1e-3",
             "units": "m^2/s",
             "source": "https://www.engineeringtoolbox.com/air-thermal-diffusivity-d_201.html",
         },
@@ -62,7 +62,7 @@ def write_physical_constants_csv(csv_path: Path) -> None:
         {
             "name": "heat_transfer_coefficient_glass",
             "symbol": "h",
-            "value": "6.5",
+            "value": "0.065",
             "units": "W/(m^2*K)",
             "source": "",
         },

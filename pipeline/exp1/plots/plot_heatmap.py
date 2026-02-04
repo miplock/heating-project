@@ -6,7 +6,6 @@ from typing import Optional
 
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
 
 
 def _project_root() -> Path:
@@ -96,12 +95,54 @@ def _axis_ticks(length_m: float, space_step: float, stride: int) -> tuple[list[f
     return tick_vals.tolist(), tick_text
 
 
+def _nan_to_none(grid: np.ndarray) -> list[list[Optional[float]]]:
+    if grid.size == 0:
+        return []
+    out = grid.astype(object)
+    out[~np.isfinite(grid)] = None
+    return out.tolist()
+
+
+def _log10_grid_with_custom(
+    grid: np.ndarray, *, eps: float = 1e-6
+) -> tuple[np.ndarray, np.ndarray]:
+    log_grid = np.full_like(grid, np.nan)
+    custom = grid.astype(float).copy()
+    invalid = ~np.isfinite(custom) | (custom <= 0.0)
+    custom[invalid] = np.nan
+    safe = np.maximum(custom, eps)
+    log_grid[~invalid] = np.log10(safe[~invalid])
+    return log_grid, custom
+
+
+def _update_min_max_from_grid(
+    grid: np.ndarray,
+    vmin: Optional[float],
+    vmax: Optional[float],
+    *,
+    lower_q: float = 1.0,
+    upper_q: float = 99.0,
+) -> tuple[Optional[float], Optional[float]]:
+    finite = np.isfinite(grid)
+    if not np.any(finite):
+        return vmin, vmax
+    values = grid[finite]
+    if values.size == 0:
+        return vmin, vmax
+    lo = float(np.nanpercentile(values, lower_q))
+    hi = float(np.nanpercentile(values, upper_q))
+    vmin = lo if vmin is None else min(vmin, lo)
+    vmax = hi if vmax is None else max(vmax, hi)
+    return vmin, vmax
+
+
 def _build_border_shapes(
     grid_shape: tuple[int, int],
     *,
     border_thickness: float,
     window_segment: Optional[tuple[float, float]] = None,
     radiator_rect: Optional[tuple[float, float, float, float]] = None,
+    window_on_top: bool = True,
 ):
     ny, nx = grid_shape
     x0 = 0.0
@@ -125,23 +166,29 @@ def _build_border_shapes(
         )
 
     shapes = [
-        rect(x0 - t, x1 + t, y0 - t, y0, "white"),
         rect(x0 - t, x0, y0, y1, "white"),
         rect(x1, x1 + t, y0, y1, "white"),
     ]
 
-    if window_segment is None:
+    if window_on_top:
+        shapes.append(rect(x0 - t, x1 + t, y0 - t, y0, "white"))
+        edge_y0, edge_y1 = y1, y1 + t
+    else:
         shapes.append(rect(x0 - t, x1 + t, y1, y1 + t, "white"))
+        edge_y0, edge_y1 = y0 - t, y0
+
+    if window_segment is None:
+        shapes.append(rect(x0 - t, x1 + t, edge_y0, edge_y1, "white"))
     else:
         wx0, wx1 = window_segment
         wx0 = _clamp(wx0, x0, x1)
         wx1 = _clamp(wx1, x0, x1)
         if wx1 <= wx0:
-            shapes.append(rect(x0 - t, x1 + t, y1, y1 + t, "white"))
+            shapes.append(rect(x0 - t, x1 + t, edge_y0, edge_y1, "white"))
         else:
-            shapes.append(rect(x0 - t, wx0, y1, y1 + t, "white"))
-            shapes.append(rect(wx1, x1 + t, y1, y1 + t, "white"))
-            shapes.append(rect(wx0, wx1, y1, y1 + t, "royalblue"))
+            shapes.append(rect(x0 - t, wx0, edge_y0, edge_y1, "white"))
+            shapes.append(rect(wx1, x1 + t, edge_y0, edge_y1, "white"))
+            shapes.append(rect(wx0, wx1, edge_y0, edge_y1, "royalblue"))
 
     if radiator_rect is not None:
         rx0, rx1, ry0, ry1 = radiator_rect
@@ -221,8 +268,14 @@ def create_heatmap_figure(
     time_step = float(params["time_step"])
 
     grids = []
+    grids_outside = []
+    grids_radiator = []
     vmin = None
     vmax = None
+    vmin_log = None
+    vmax_log = None
+    vmin_radiator = None
+    vmax_radiator = None
     stride_used = None
     radiator_rect = None
 
@@ -265,12 +318,26 @@ def create_heatmap_figure(
             ry1_ds = max(0, min(ry1_ds, grid.shape[0] - 1))
             if radiator_rect is None:
                 radiator_rect = (rx0_ds, rx1_ds, ry0_ds, ry1_ds)
-            grid_for_scale = grid.copy()
-            grid_for_scale[ry0_ds : ry1_ds + 1, rx0_ds : rx1_ds + 1] = np.nan
-        current_min = float(np.nanmin(grid_for_scale))
-        current_max = float(np.nanmax(grid_for_scale))
-        vmin = current_min if vmin is None else min(vmin, current_min)
-        vmax = current_max if vmax is None else max(vmax, current_max)
+            grid_outside = grid.copy()
+            grid_outside[ry0_ds : ry1_ds + 1, rx0_ds : rx1_ds + 1] = np.nan
+            grid_radiator = np.full_like(grid, np.nan)
+            grid_radiator[ry0_ds : ry1_ds + 1, rx0_ds : rx1_ds + 1] = grid[
+                ry0_ds : ry1_ds + 1, rx0_ds : rx1_ds + 1
+            ]
+            grids_outside.append(grid_outside)
+            grids_radiator.append(grid_radiator)
+            vmin, vmax = _update_min_max_from_grid(grid_outside, vmin, vmax)
+            vmin_radiator, vmax_radiator = _update_min_max_from_grid(
+                grid_radiator, vmin_radiator, vmax_radiator
+            )
+            log_grid, _ = _log10_grid_with_custom(grid_outside)
+            vmin_log, vmax_log = _update_min_max_from_grid(log_grid, vmin_log, vmax_log)
+        else:
+            grids_outside.append(grid)
+            grids_radiator.append(np.full_like(grid, np.nan))
+            vmin, vmax = _update_min_max_from_grid(grid, vmin, vmax)
+            log_grid, _ = _log10_grid_with_custom(grid)
+            vmin_log, vmax_log = _update_min_max_from_grid(log_grid, vmin_log, vmax_log)
 
     grid_shape = grids[0].shape
     border_thickness = max(1.0, round(min(grid_shape) * 0.03, 2))
@@ -290,8 +357,25 @@ def create_heatmap_figure(
         grid_shape,
         border_thickness=border_thickness,
         window_segment=window_segment,
-        radiator_rect=radiator_rect,
+        radiator_rect=None,
+        window_on_top=False,
     )
+    if radiator_rect is not None:
+        rx0, rx1, ry0, ry1 = radiator_rect
+        shapes.append(
+            dict(
+                type="rect",
+                xref="x",
+                yref="y",
+                x0=rx0,
+                x1=rx1,
+                y0=ry0,
+                y1=ry1,
+                fillcolor="rgba(0,0,0,0)",
+                line=dict(color="black", width=1),
+                layer="above",
+            )
+        )
     x_tick_vals, x_tick_text = _axis_ticks(
         float(params["room_width"]), float(params["space_step"]), stride_used
     )
@@ -300,53 +384,93 @@ def create_heatmap_figure(
     )
 
     title_time = _format_elapsed_time(steps_idx[0] * time_step)
+    grids_outside_log = []
+    grids_outside_custom = []
+    for grid in grids_outside:
+        log_grid, custom = _log10_grid_with_custom(grid)
+        grids_outside_log.append(log_grid)
+        grids_outside_custom.append(custom)
+
+    grids_outside_plot = [_nan_to_none(grid) for grid in grids_outside_log]
+    grids_outside_custom_plot = [_nan_to_none(grid) for grid in grids_outside_custom]
+    grids_radiator_plot = [_nan_to_none(grid) for grid in grids_radiator]
+
+    base_size = 765
+    fig_size = int(round(base_size * 0.8))
+
     if len(grids) == 1:
-        fig = px.imshow(
-            grids[0],
-            origin="lower",
-            color_continuous_scale="Turbo",
-            labels={"x": "X", "y": "Y", "color": "Temperature (°C)"},
-            title=f"Heatmap (step {steps_idx[0]}, time {title_time})",
-            zmin=vmin,
-            zmax=vmax,
-        )
-        fig.update_traces(
-            hovertemplate="Temperature: %{z:.2f}°C<extra></extra>",
-            colorbar=dict(title="Temperature (°C)", len=0.8, thickness=14),
-        )
-        fig.update_layout(
-            title=dict(x=0.5),
-            xaxis=dict(
-                constrain="domain",
-                title_text="",
-                tickvals=x_tick_vals,
-                ticktext=x_tick_text,
-                range=[-border_thickness, grid_shape[1] - 1 + border_thickness],
-            ),
+        fig = go.Figure(
+            data=[
+                go.Heatmap(
+                    z=grids_outside_plot[0],
+                    colorscale="Inferno",
+                    zmin=vmin_log,
+                    zmax=vmax_log,
+                    showscale=True,
+                    colorbar=dict(title="Outside (°C)", len=0.8, thickness=14, x=1.02),
+                    hoverongaps=False,
+                    customdata=grids_outside_custom_plot[0],
+                    hovertemplate="Temperature (outside): %{customdata:.2f}°C<extra></extra>",
+                ),
+                go.Heatmap(
+                    z=grids_radiator_plot[0],
+                    colorscale="Turbo",
+                    zmin=vmin_radiator if vmin_radiator is not None else vmin,
+                    zmax=vmax_radiator if vmax_radiator is not None else vmax,
+                    showscale=True,
+                    colorbar=dict(title="Radiator (°C)", len=0.8, thickness=14, x=1.12),
+                    hoverongaps=False,
+                    hovertemplate="Temperature (radiator): %{z:.2f}°C<extra></extra>",
+                ),
+            ],
+            layout=go.Layout(
+                title=dict(text=f"Heatmap (step {steps_idx[0]}, time {title_time})", x=0.5),
+                xaxis=dict(
+                    constrain="domain",
+                    title_text="",
+                    tickvals=x_tick_vals,
+                    ticktext=x_tick_text,
+                    range=[-border_thickness, grid_shape[1] - 1 + border_thickness],
+                ),
             yaxis=dict(
                 scaleanchor="x",
                 scaleratio=1,
                 title_text="",
                 tickvals=y_tick_vals,
                 ticktext=y_tick_text,
-                range=[-border_thickness, grid_shape[0] - 1 + border_thickness],
+                range=[grid_shape[0] - 1 + border_thickness, -border_thickness],
+                autorange="reversed",
             ),
-            shapes=shapes,
-            width=765,
-            height=765,
+                shapes=shapes,
+                width=fig_size,
+                height=fig_size,
+            ),
         )
         return fig
 
     fig = go.Figure(
         data=[
             go.Heatmap(
-                z=grids[0],
+                z=grids_outside_plot[0],
+                colorscale="Inferno",
+                zmin=vmin_log,
+                zmax=vmax_log,
+                showscale=True,
+                colorbar=dict(title="Outside (°C)", len=0.8, thickness=14, x=1.02),
+                hoverongaps=False,
+                customdata=grids_outside_custom_plot[0],
+                hovertemplate="Temperature (outside): %{customdata:.2f}°C<extra></extra>",
+            ),
+            go.Heatmap(
+                z=grids_radiator_plot[0],
                 colorscale="Turbo",
-                zmin=vmin,
-                zmax=vmax,
-                colorbar=dict(title="Temperature (°C)", len=0.8, thickness=14),
-                hovertemplate="Temperature: %{z:.2f}°C<extra></extra>",
-            )
+                zmin=vmin_radiator if vmin_radiator is not None else vmin,
+                zmax=vmax_radiator if vmax_radiator is not None else vmax,
+                showscale=True,
+                colorbar=dict(title="Radiator (°C)", len=0.8, thickness=14, x=1.12),
+                hoverongaps=False,
+                hovertemplate="Temperature (radiator): %{z:.2f}°C<extra></extra>",
+            ),
         ],
         layout=go.Layout(
             title=dict(text=f"Heatmap (step {steps_idx[0]}, time {title_time})", x=0.5),
@@ -363,11 +487,12 @@ def create_heatmap_figure(
                 title="",
                 tickvals=y_tick_vals,
                 ticktext=y_tick_text,
-                range=[-border_thickness, grid_shape[0] - 1 + border_thickness],
+                range=[grid_shape[0] - 1 + border_thickness, -border_thickness],
+                autorange="reversed",
             ),
             shapes=shapes,
-            width=765,
-            height=765,
+            width=fig_size,
+            height=fig_size,
             sliders=[
                 dict(
                     active=0,
@@ -380,7 +505,10 @@ def create_heatmap_figure(
                             label=f"{step_idx} ({_format_elapsed_time(step_idx * time_step)})",
                             method="update",
                             args=[
-                                {"z": [grid]},
+                                {
+                                    "z": [grid_out, grid_rad],
+                                    "customdata": [grid_out_custom, None],
+                                },
                                 {
                                     "title": {
                                         "text": (
@@ -393,7 +521,12 @@ def create_heatmap_figure(
                                 },
                             ],
                         )
-                        for grid, step_idx in zip(grids, steps_idx)
+                        for grid_out, grid_rad, grid_out_custom, step_idx in zip(
+                            grids_outside_plot,
+                            grids_radiator_plot,
+                            grids_outside_custom_plot,
+                            steps_idx,
+                        )
                     ],
                 )
             ],

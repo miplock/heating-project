@@ -1,16 +1,16 @@
 name,value,units,description
 temp_initial,289.15,K,Initial temperature
-time_steps,100000,count,Number of simulation time steps
+time_steps,10000,count,Number of simulation time steps
 time_step,0.5,s,Time step size
 use_iterative_solver,true,bool,Use iterative solver
 space_step,0.05,m,Spatial step size
 room_length,5.0,m,Room length
 room_width,4.0,m,Room width
 temp_external,278.15,K,External temperature
-radiator_size_x,1.0,m,Radiator size in x direction
-radiator_size_y,0.5,m,Radiator size in y direction
-radiator_pos_x,0.5,m,Radiator position (x)
-radiator_pos_y,0.5,m,Radiator position (y)
-window_pos_x,3.0,m,Window position (x)
+radiator_size_x,1,m,Radiator size in x direction
+radiator_size_y,0.25,m,Radiator size in y direction
+radiator_pos_x,1.5,m,Radiator position (x)
+radiator_pos_y,0.1,m,Radiator position (y)
+window_pos_x,1.5,m,Window position (x)
 window_width,1.0,m,Window width
 comfort_temp,294.15,K,Comfort temperature

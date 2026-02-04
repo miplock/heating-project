@@ -43,6 +43,7 @@ class HeatSolver:
         self.iter_maxiter = 500
         self.ilu_drop_tol = 1e-4
         self.ilu_fill_factor = 10
+        
     def run(self):
         """
         tu bedzie petla i bedzie zwracala w sumie najlepiej chyba jakis cache z
@@ -153,12 +154,13 @@ class HeatSolver:
         :param A_tilde: Description
         """
         # trzeba jeszcze wymyslic co zrobic z rogami
-        # na razie tylko betonowe ściany zewnętrzne (izolacja)
-        c0 = (self.alpha_cond / self.h_x + self.lambda_concrete)
+        # beton dla ścian, szkło dla okna (górna krawędź)
+        c0_concrete = (self.alpha_cond / self.h_x + self.lambda_concrete)
+        c0_glass = (self.alpha_cond / self.h_x + self.lambda_glass)
         c1 = -self.alpha_cond / self.h_x
         A_tilde = A_tilde.tolil()  # łatwa podmiana wierszy
 
-        def set_row(k, kin):
+        def set_row(k, kin, c0):
             A_tilde.rows[k] = []
             A_tilde.data[k] = []
             A_tilde[k, k] = c0
@@ -167,23 +169,25 @@ class HeatSolver:
         # LEFT edge: j=0, i=1..Ny-2, kin = k+1
         for i in range(0, self.Ny):
             k = i * self.Nx
-            set_row(k, k + 1)
+            set_row(k, k + 1, c0_concrete)
 
         # RIGHT edge: j=Nx-1, i=1..Ny-2, kin = k-1
         for i in range(0, self.Ny):
             k = i * self.Nx + (self.Nx - 1)
-            set_row(k, k - 1)
+            set_row(k, k - 1, c0_concrete)
 
         # TOP edge: i=0, j=1..Nx-2, kin = k+Nx
         for j in range(1, self.Nx - 1):
             k = j
-            set_row(k, k + self.Nx)
+            c0 = c0_glass if k in self._idx_window else c0_concrete
+            set_row(k, k + self.Nx, c0)
 
         # BOTTOM edge: i=Ny-1, j=1..Nx-2, kin = k-Nx
         base = (self.Ny - 1) * self.Nx
         for j in range(1, self.Nx - 1):
             k = base + j
-            set_row(k, k - self.Nx)
+            c0 = c0_glass if k in self._idx_window else c0_concrete
+            set_row(k, k - self.Nx, c0)
 
         return A_tilde.tocsr()
     
@@ -194,9 +198,11 @@ class HeatSolver:
         :param self: Description
         :param b_n: Description
         """
-        # na razie tylko betonowe ściany zewnętrzne (izolacja)
-        rhs = self.lambda_concrete * self.u2
-        b_n[self._idx_boundary] = rhs
+        # beton dla ścian, szkło dla okna (górna krawędź)
+        rhs_concrete = self.lambda_concrete * self.u2
+        rhs_glass = self.lambda_glass * self.u2
+        b_n[self._idx_boundary_other] = rhs_concrete
+        b_n[self._idx_window] = rhs_glass
         return b_n
     
     def _compute_bn_vector(self, un):
@@ -229,8 +235,19 @@ class HeatSolver:
         top = np.arange(Nx)
         bottom = (Ny - 1) * Nx + np.arange(Nx)
 
+        # okno na górnej krawędzi rzutu z góry (i=Ny-1) w zakresie x=[window_pos_x, window_pos_x+window_width]
+        j0 = int(self.window_pos_x / self.h_x)
+        j1 = int((self.window_pos_x + self.window_width) / self.h_x)
+        j0 = max(0, min(Nx - 1, j0))
+        j1 = max(0, min(Nx - 1, j1))
+        if j1 < j0:
+            j0, j1 = j1, j0
+        window_top = bottom[j0:j1 + 1]
+
         # unikalne, żeby rogi nie dublowały się
         self._idx_boundary = np.unique(np.concatenate([left, right, top, bottom]))
+        self._idx_window = np.unique(window_top)
+        self._idx_boundary_other = np.setdiff1d(self._idx_boundary, self._idx_window, assume_unique=False)
 
     def _setup_iterative_solver(self, A):
         """
